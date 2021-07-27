@@ -1,7 +1,6 @@
 #include "button_lib.h"
 #include "string.h"
 #include "Arduino.h"
-#define MAX_NUM_OF_BUTTON 10
 uint32_t BUTTON_HOLD_TICK;
 uint32_t BUTTON_IDLE_TICK;
 typedef enum
@@ -34,7 +33,7 @@ typedef struct
   button_cb_t cb_data[MAX_CB_PER_BUTTON];
   uint8_t cb_length;
   SM_t current_SM;
-  uint16_t SM_count; // general purpose variable used only in state machine
+  uint32_t SM_count; // general purpose variable used only in state machine
   int (*read_fp)(uint8_t);
   uint8_t has_valid_state;
 } button_t;
@@ -154,7 +153,6 @@ void button_SM_process()
         else SM_is_processing = 0;
         break;
       case SM_PREPARE_PRESSING:
-        button[i].result.click_count++;
         button[i].current_SM = SM_PRESSING;
         button[i].SM_count = 0;
         break;
@@ -175,6 +173,7 @@ void button_SM_process()
         break;
       case SM_PREPARE_RELEASE:
         button[i].SM_count = 0;
+        button[i].result.click_count++;
         button[i].current_SM = SM_RELEASE;
         break;
       case SM_RELEASE:
@@ -195,7 +194,8 @@ void button_SM_process()
         button[i].result.is_hold = 1;
         if(button[i].state == RELEASED)
         {
-          button[i].current_SM = SM_PREPARE_RELEASE;
+          button[i].SM_count = 0;
+          button[i].current_SM = SM_RELEASE;
         }
         break;
       case SM_PREPARE_IDLE:
