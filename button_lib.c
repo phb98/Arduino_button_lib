@@ -1,8 +1,8 @@
 #include "button_lib.h"
 #include "string.h"
 #include "Arduino.h"
-uint32_t BUTTON_HOLD_TICK;
-uint32_t BUTTON_IDLE_TICK;
+static uint32_t BUTTON_HOLD_TICK;
+static uint32_t BUTTON_IDLE_TICK;
 typedef enum
 {
   SM_IDLE = 0,
@@ -39,7 +39,8 @@ typedef struct
 } button_t;
 
 button_t button[MAX_NUM_OF_BUTTON];
-uint8_t button_count= 0;
+uint8_t button_count = 0;
+uint8_t button_is_initialized = 0;
 
 /*        PRIVATE PROTOTYPE       */
 bool    SM_is_processing = 0;
@@ -53,12 +54,16 @@ void button_initialize(uint32_t idle_tick, uint32_t hold_tick)
   BUTTON_IDLE_TICK = idle_tick;
   BUTTON_HOLD_TICK = hold_tick;
   memset(button, 0x00, sizeof(button_t) * MAX_NUM_OF_BUTTON);
+  button_count = 0;
+  button_is_initialized = 1;
 }
 
 uint8_t button_register(button_register_t register_button, button_result_t ** tracking_var)
 {
+  
   if(button_count >= MAX_NUM_OF_BUTTON ||
-     register_button.callback_length > MAX_CB_PER_BUTTON)
+     register_button.callback_length > MAX_CB_PER_BUTTON ||
+     (!button_is_initialized))
   {
     return BUTTON_ERR; // fail to register
   }
@@ -69,7 +74,8 @@ uint8_t button_register(button_register_t register_button, button_result_t ** tr
     button[button_count].active_logic = register_button.active_logic;
     for(int i = 0; i < register_button.callback_length; i++)
     {
-      button[button_count].cb_data[i].trig_result = register_button.trigger_result[i];
+      memcpy(&button[button_count].cb_data[i].trig_result, &register_button.trigger_result[i], sizeof(button_result_t));
+      //button[button_count].cb_data[i].trig_result = register_button.trigger_result[i];
       button[button_count].cb_data[i].cb = register_button.callback[i];
     }
     button[button_count].cb_length = register_button.callback_length;
@@ -94,7 +100,6 @@ void button_update()
   button_read();
   if(button_is_changed_state() || SM_is_processing)
   {
-    //
     button_SM_process(); 
   }
 }
@@ -124,6 +129,7 @@ uint8_t button_is_changed_state()
   static button_state_t old_state[MAX_NUM_OF_BUTTON]={RELEASED};
   for(int i=0; i < button_count; i++)
   {
+    if(!button[i].has_valid_state) continue;
     if(old_state[i] != button[i].state)
     {
       result = 1;
@@ -135,28 +141,30 @@ uint8_t button_is_changed_state()
 
 void button_SM_process()
 {
-  SM_is_processing = 1;
+  uint8_t all_button_are_idle = 1;
   for(int i = 0; i < button_count; i++)
   {
     if(!button[i].has_valid_state) continue;
     switch(button[i].current_SM)
     {
       case SM_IDLE:
+        button[i].result.click_count = 0;
+        button[i].result.is_hold = 0;
         if(button[i].state == PRESSED)
         {
+          all_button_are_idle = 0;
           button[i].SM_count = 0;
-          button[i].result.click_count = 0;
-          button[i].result.is_hold = 0;
           for(int j = 0; j < button[i].cb_length; j++) button[i].cb_data[j].is_served = 0;
           button[i].current_SM = SM_PREPARE_PRESSING;
         }
-        else SM_is_processing = 0;
         break;
       case SM_PREPARE_PRESSING:
+        all_button_are_idle = 0;
         button[i].current_SM = SM_PRESSING;
         button[i].SM_count = 0;
         break;
       case SM_PRESSING:
+        all_button_are_idle = 0;
         if(button[i].state == RELEASED)
         {
           button[i].current_SM = SM_PREPARE_RELEASE;
@@ -172,11 +180,13 @@ void button_SM_process()
         }
         break;
       case SM_PREPARE_RELEASE:
+        all_button_are_idle = 0;
         button[i].SM_count = 0;
         button[i].result.click_count++;
         button[i].current_SM = SM_RELEASE;
         break;
       case SM_RELEASE:
+        all_button_are_idle = 0;
         if(button[i].state == PRESSED)
         {
           button[i].current_SM = SM_PREPARE_PRESSING;
@@ -191,6 +201,7 @@ void button_SM_process()
         }
         break;
       case SM_HOLDING:
+        all_button_are_idle = 0;
         button[i].result.is_hold = 1;
         if(button[i].state == RELEASED)
         {
@@ -199,21 +210,22 @@ void button_SM_process()
         }
         break;
       case SM_PREPARE_IDLE:
+        all_button_are_idle = 0;
         button[i].current_SM = SM_IDLE;
         button[i].SM_count = 0;
-        button[i].result.click_count = 0;
-        button[i].result.is_hold = 0;
         break;
     }
     /*execute callback*/
-    if(button[i].current_SM != SM_IDLE)
+    
+    if(button[i].current_SM == SM_PREPARE_IDLE ||
+       button[i].current_SM == SM_HOLDING)
     {
       for(int j = 0; j < button[i].cb_length; j++)
       {
         if(button[i].result.click_count == button[i].cb_data[j].trig_result.click_count &&
-          button[i].result.is_hold == button[i].cb_data[j].trig_result.is_hold &&
-          button[i].cb_data[j].cb != NULL &&
-          button[i].cb_data[j].is_served == 0)
+           button[i].result.is_hold == button[i].cb_data[j].trig_result.is_hold &&
+           button[i].cb_data[j].cb != NULL &&
+           button[i].cb_data[j].is_served == 0)
         {
           button[i].cb_data[j].is_served = 1;
           button[i].cb_data[j].cb();
@@ -221,5 +233,13 @@ void button_SM_process()
       }
     }
     button[i].has_valid_state = 0;
+  }
+  if(all_button_are_idle)
+  {
+    SM_is_processing = 0;
+  }
+  else 
+  {
+    SM_is_processing = 1;
   }
 }
