@@ -4,7 +4,7 @@ extern "C"{
 #endif
 #include <stdint.h>
 #include <stdbool.h>
-#define MAX_NUM_OF_BUTTON 3
+#define MAX_NUM_OF_BUTTON 5
 #define MAX_CB_PER_BUTTON 3
 #define BUTTON_ERR 1
 #define BUTTON_OK 0
@@ -23,9 +23,9 @@ typedef struct
   int  (*read_fp)(uint8_t); // if user want to use faster read than digitalRead function of Arduino
 } button_register_t;
 
-void button_initialize(uint32_t idle_tick, uint32_t hold_tick);
+void    button_initialize(uint32_t idle_tick, uint32_t hold_tick);
 uint8_t button_register(button_register_t register_button, button_result_t **tracking_var);
-void button_update(); //call periodically
+void    button_update(); //call periodically
 
 #ifdef __cplusplus
 }

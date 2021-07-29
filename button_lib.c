@@ -75,7 +75,6 @@ uint8_t button_register(button_register_t register_button, button_result_t ** tr
     for(int i = 0; i < register_button.callback_length; i++)
     {
       memcpy(&button[button_count].cb_data[i].trig_result, &register_button.trigger_result[i], sizeof(button_result_t));
-      //button[button_count].cb_data[i].trig_result = register_button.trigger_result[i];
       button[button_count].cb_data[i].cb = register_button.callback[i];
     }
     button[button_count].cb_length = register_button.callback_length;
